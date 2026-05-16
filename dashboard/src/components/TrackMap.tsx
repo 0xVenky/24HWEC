@@ -13,7 +13,7 @@ import {
   type CarPosState,
 } from "../lib/trackGeometry";
 
-const DOT_RADIUS = 6;
+const DOT_RADIUS = 12;
 const PIT_LANE_Y = NURBURGRING_VIEWBOX.height - 30;
 const PIT_LANE_X = 60;
 const PIT_LANE_W = NURBURGRING_VIEWBOX.width - 120;
@@ -119,13 +119,16 @@ export function TrackMap(props: {
     };
   }, [geom]);
 
-  // Hover state for the info card.
-  const [hoveredStnr, setHoveredStnr] = useState<string | null>(null);
-  const hoveredEntry = hoveredStnr
-    ? carRows.find((e) => e.STNR === hoveredStnr) ?? null
+  // Selection state for the info card — clicking a dot pins it open.
+  const [selectedStnr, setSelectedStnr] = useState<string | null>(null);
+  const selectedEntry = selectedStnr
+    ? carRows.find((e) => e.STNR === selectedStnr) ?? null
     : null;
-  const onEnter = useCallback((stnr: string) => setHoveredStnr(stnr), []);
-  const onLeave = useCallback(() => setHoveredStnr(null), []);
+  const onToggle = useCallback(
+    (stnr: string) => setSelectedStnr((cur) => (cur === stnr ? null : stnr)),
+    [],
+  );
+  const onClose = useCallback(() => setSelectedStnr(null), []);
 
   return (
     <div className="relative flex-1 overflow-hidden bg-zinc-950 p-4">
@@ -210,9 +213,8 @@ export function TrackMap(props: {
                 if (h) dotsRef.current.set(e.STNR, h);
                 else dotsRef.current.delete(e.STNR);
               }}
-              onEnter={() => onEnter(e.STNR)}
-              onLeave={onLeave}
-              isHovered={hoveredStnr === e.STNR}
+              onSelect={() => onToggle(e.STNR)}
+              isSelected={selectedStnr === e.STNR}
             />
           ))}
         </g>
@@ -229,8 +231,14 @@ export function TrackMap(props: {
         </div>
       </div>
 
-      {/* Hover card */}
-      {hoveredEntry ? <HoverInfo entry={hoveredEntry} /> : null}
+      {/* Selected car card */}
+      {selectedEntry ? (
+        <SelectedInfo
+          entry={selectedEntry}
+          onClose={onClose}
+          allEntries={snapshot.RESULT}
+        />
+      ) : null}
     </div>
   );
 }
@@ -238,11 +246,10 @@ export function TrackMap(props: {
 function CarDot(props: {
   entry: LtsResultEntry;
   onRegister: (h: DotHandles | null) => void;
-  onEnter: () => void;
-  onLeave: () => void;
-  isHovered: boolean;
+  onSelect: () => void;
+  isSelected: boolean;
 }) {
-  const { entry, onRegister, onEnter, onLeave, isHovered } = props;
+  const { entry, onRegister, onSelect, isSelected } = props;
   const groupRef = useRef<SVGGElement | null>(null);
   const circleRef = useRef<SVGCircleElement | null>(null);
   const labelRef = useRef<SVGTextElement | null>(null);
@@ -262,26 +269,25 @@ function CarDot(props: {
   }, []);
 
   const color = classColor(entry.CLASSNAME);
-  const r = isHovered ? DOT_RADIUS + 2 : DOT_RADIUS;
+  const r = isSelected ? DOT_RADIUS + 2 : DOT_RADIUS;
 
   return (
     <g
       ref={groupRef}
       style={{ transition: "transform 350ms linear", cursor: "pointer" }}
-      onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
+      onClick={onSelect}
     >
       <circle
         ref={circleRef}
         r={r}
         fill={color}
-        stroke={isHovered ? "#ffffff" : "#0a0a0a"}
-        strokeWidth={isHovered ? 1.5 : 1}
+        stroke={isSelected ? "#ffffff" : "#0a0a0a"}
+        strokeWidth={isSelected ? 1.5 : 1}
       />
       <text
         ref={labelRef}
-        y={2.5}
-        fontSize={6.5}
+        y={3.2}
+        fontSize={9}
         fontWeight={700}
         fontFamily="ui-monospace, monospace"
         fill="#000"
@@ -341,9 +347,36 @@ function renderDot(
   group.setAttribute("transform", `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
 }
 
-function HoverInfo({ entry }: { entry: LtsResultEntry }) {
+function SelectedInfo({
+  entry,
+  onClose,
+  allEntries,
+}: {
+  entry: LtsResultEntry;
+  onClose: () => void;
+  allEntries: LtsResultEntry[];
+}) {
+  const pos = Number.parseInt(entry.POSITION, 10);
+  const carAhead = Number.isFinite(pos) && pos > 1
+    ? allEntries.find((e) => Number.parseInt(e.POSITION, 10) === pos - 1) ?? null
+    : null;
+  const carBehind = Number.isFinite(pos)
+    ? allEntries.find((e) => Number.parseInt(e.POSITION, 10) === pos + 1) ?? null
+    : null;
+  const aheadLabel = carAhead ? `Ahead (#${carAhead.STNR})` : "Ahead";
+  const behindLabel = carBehind ? `Behind (#${carBehind.STNR})` : "Behind";
+  const timeAhead = carAhead ? signedGap(entry.INT, "-") : "—";
+  const timeBehind = carBehind ? signedGap(carBehind.INT, "+") : "—";
   return (
-    <div className="pointer-events-none absolute right-4 top-4 min-w-[18rem] rounded border border-f1-divider/80 bg-zinc-900/95 p-3 text-xs shadow-xl">
+    <div className="absolute right-4 top-4 min-w-[18rem] rounded border border-f1-divider/80 bg-zinc-900/95 p-3 pr-9 text-xs shadow-xl">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close car details"
+        className="absolute right-2 top-2 rounded-sm border border-zinc-700 px-1.5 text-[11px] leading-tight text-f1-dim hover:border-zinc-500 hover:text-white"
+      >
+        ✕
+      </button>
       <div className="flex items-baseline justify-between gap-3">
         <div>
           <div className="font-mono text-[10px] uppercase tracking-wider text-f1-dim">
@@ -372,18 +405,38 @@ function HoverInfo({ entry }: { entry: LtsResultEntry }) {
         <Field label="Last" value={fmtTime(entry.LASTLAPTIME)} />
         <Field label="Best" value={fmtTime(entry.FASTESTLAP)} />
         <Field label="Gap" value={fmtGap(entry.GAP)} />
-        <Field label="Int" value={fmtGap(entry.INT)} />
+        <Field label={aheadLabel} value={timeAhead} valueClassName="text-red-400" />
+        <Field label={behindLabel} value={timeBehind} valueClassName="text-emerald-400" />
         <Field label="Pit#" value={entry.PITSTOPCOUNT} />
       </div>
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string | undefined }) {
+function Field({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value: string | undefined;
+  valueClassName?: string;
+}) {
   return (
     <div className="flex justify-between gap-2">
       <span className="text-f1-dim">{label}</span>
-      <span className="text-zinc-200">{value || "—"}</span>
+      <span className={valueClassName ?? "text-zinc-200"}>{value || "—"}</span>
     </div>
   );
+}
+
+function signedGap(raw: string | undefined, sign: "+" | "-"): string {
+  if (!raw) return "—";
+  let body = raw.startsWith("+") || raw.startsWith("-") ? raw.slice(1) : raw;
+  body = body.trim();
+  if (!body) return "—";
+  // Accept time-like values ("1.234", "1:23.456") or lap-based ("1 LAP", "+LAP 1").
+  // Anything else (e.g. status codes like "R001", "----LAP 28") becomes "—".
+  if (!/^\d/.test(body) && !/^LAP/i.test(body)) return "—";
+  return sign + body;
 }
