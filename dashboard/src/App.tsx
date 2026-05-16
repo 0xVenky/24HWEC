@@ -9,6 +9,7 @@ import { LapChart } from "./components/LapChart";
 import { LtsClient, type ConnectionStatus } from "./lib/ws-client";
 import type { LtsServerMessage } from "./types";
 import { initialState, reducer } from "./lib/state";
+import { useCode60Zones } from "./lib/code60";
 
 const DEFAULT_EVENT_ID = "50";
 
@@ -24,6 +25,7 @@ export function App() {
   const lastUpdateRef = useRef<number>(0);
   const [lastUpdateAgo, setLastUpdateAgo] = useState(0);
   const eventId = new URLSearchParams(window.location.search).get("event") ?? DEFAULT_EVENT_ID;
+  const code60 = useCode60Zones(eventId);
 
   useEffect(() => {
     const client = new LtsClient({
@@ -79,6 +81,7 @@ export function App() {
           onToggleRc={toggleRc}
           view={view}
           onSetView={setView}
+          code60={code60}
         />
         <FilterBar
           entries={snapshot?.RESULT ?? []}
