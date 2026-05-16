@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Analytics } from "@vercel/analytics/react";
 import { Header } from "./components/Header";
 import { FilterBar, applyFilters, emptyFilters, type FilterState } from "./components/FilterBar";
 import { TimingTable } from "./components/TimingTable";
@@ -65,76 +66,79 @@ export function App() {
   const toggleRc = useCallback(() => setRcOpen((v) => !v), []);
 
   return (
-    <div className="flex h-full flex-col">
-      <Header
-        snapshot={snapshot}
-        session={session}
-        status={status}
-        carsShown={filteredEntries.length}
-        carsTotal={snapshot?.RESULT.length ?? 0}
-        rcOpen={rcOpen}
-        rcUnread={unreadMessages}
-        onToggleRc={toggleRc}
-        view={view}
-        onSetView={setView}
-      />
-      <FilterBar
-        entries={snapshot?.RESULT ?? []}
-        filters={filters}
-        onChange={setFilters}
-      />
+    <>
+      <div className="flex h-full flex-col">
+        <Header
+          snapshot={snapshot}
+          session={session}
+          status={status}
+          carsShown={filteredEntries.length}
+          carsTotal={snapshot?.RESULT.length ?? 0}
+          rcOpen={rcOpen}
+          rcUnread={unreadMessages}
+          onToggleRc={toggleRc}
+          view={view}
+          onSetView={setView}
+        />
+        <FilterBar
+          entries={snapshot?.RESULT ?? []}
+          filters={filters}
+          onChange={setFilters}
+        />
 
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {!snapshot ? (
-            <EmptyState status={status} eventId={eventId} />
-          ) : view === "lapchart" ? (
-            <LapChart
-              snapshot={snapshot}
-              filteredEntries={filteredEntries}
-              lapsByCar={lapsByCar}
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {!snapshot ? (
+              <EmptyState status={status} eventId={eventId} />
+            ) : view === "lapchart" ? (
+              <LapChart
+                snapshot={snapshot}
+                filteredEntries={filteredEntries}
+                lapsByCar={lapsByCar}
+              />
+            ) : view === "track" ? (
+              <TrackMap snapshot={snapshot} filteredEntries={filteredEntries} />
+            ) : filteredEntries.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center text-sm text-f1-dim">
+                No cars match the current filters.
+              </div>
+            ) : (
+              <TimingTable
+                snapshot={snapshot}
+                filteredEntries={filteredEntries}
+                allEntries={snapshot.RESULT}
+                lapsByCar={lapsByCar}
+              />
+            )}
+          </div>
+          {rcOpen ? (
+            <RaceControl
+              messages={messages}
+              onSelectCar={focusCar}
+              onClose={() => setRcOpen(false)}
             />
-          ) : view === "track" ? (
-            <TrackMap snapshot={snapshot} filteredEntries={filteredEntries} />
-          ) : filteredEntries.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center text-sm text-f1-dim">
-              No cars match the current filters.
-            </div>
-          ) : (
-            <TimingTable
-              snapshot={snapshot}
-              filteredEntries={filteredEntries}
-              allEntries={snapshot.RESULT}
-              lapsByCar={lapsByCar}
-            />
-          )}
+          ) : null}
         </div>
-        {rcOpen ? (
-          <RaceControl
-            messages={messages}
-            onSelectCar={focusCar}
-            onClose={() => setRcOpen(false)}
-          />
-        ) : null}
-      </div>
 
-      <footer className="flex items-center justify-between border-t border-f1-divider bg-f1-panel px-6 py-2 text-[11px] text-f1-dim">
-        <span>
-          Event ID <span className="font-mono text-zinc-300">{eventId}</span>
-          {" · "}
-          Snapshots: <span className="font-mono text-zinc-300">{snapshot ? "live" : "—"}</span>
-          {" · "}
-          Last update:{" "}
-          <span className="font-mono text-zinc-300">
-            {lastUpdateRef.current ? `${lastUpdateAgo}s ago` : "—"}
+        <footer className="flex items-center justify-between border-t border-f1-divider bg-f1-panel px-6 py-2 text-[11px] text-f1-dim">
+          <span>
+            Event ID <span className="font-mono text-zinc-300">{eventId}</span>
+            {" · "}
+            Snapshots: <span className="font-mono text-zinc-300">{snapshot ? "live" : "—"}</span>
+            {" · "}
+            Last update:{" "}
+            <span className="font-mono text-zinc-300">
+              {lastUpdateRef.current ? `${lastUpdateAgo}s ago` : "—"}
+            </span>
           </span>
-        </span>
-        <span>
-          Data: <span className="font-mono">wss://livetiming.azurewebsites.net</span>{" "}
-          (PID=0 · 3 · 4 · 7 · 9002)
-        </span>
-      </footer>
-    </div>
+          <span>
+            Data: <span className="font-mono">wss://livetiming.azurewebsites.net</span>{" "}
+            (PID=0 · 3 · 4 · 7 · 9002)
+          </span>
+        </footer>
+      </div>
+      <Analytics />
+    </>
   );
 }
 
