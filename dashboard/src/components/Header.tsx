@@ -65,17 +65,17 @@ export function Header(props: {
   return (
     <header className="border-b border-f1-divider bg-f1-panel">
       <div className="border-t-2 border-f1-accent" />
-      <div className="flex items-center gap-6 px-6 py-3">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-2xl font-extrabold tracking-tight text-white">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 md:flex-nowrap md:gap-6 md:px-6 md:py-3">
+        <div className="flex items-baseline gap-2 md:gap-3">
+          <span className="font-mono text-lg font-extrabold tracking-tight text-white md:text-2xl">
             FastN24
           </span>
-          <span className="text-xs uppercase tracking-widest text-f1-dim">
+          <span className="hidden text-xs uppercase tracking-widest text-f1-dim md:inline">
             Live Timing
           </span>
         </div>
 
-        <div className="flex flex-1 items-center gap-6 text-sm">
+        <div className="hidden flex-1 items-center gap-6 text-sm md:flex">
           <div className="flex flex-col">
             <span className="text-xs uppercase text-f1-dim">Event</span>
             <span className="font-medium text-white">{snapshot?.CUP ?? "—"}</span>
@@ -104,7 +104,7 @@ export function Header(props: {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="ml-auto flex items-center gap-1.5 md:gap-3">
           <div className="inline-flex overflow-hidden rounded-sm border border-zinc-700">
             <ViewTab label="Timing" active={view === "timing"} onClick={() => onSetView("timing")} />
             <ViewTab label="Track" active={view === "track"} onClick={() => onSetView("track")} />
@@ -118,8 +118,10 @@ export function Header(props: {
                 : "border-zinc-700 bg-zinc-800/60 text-zinc-300 hover:border-zinc-500"
             }`}
             title="Race control messages"
+            aria-label="Race control messages"
           >
-            Race control
+            <span className="md:hidden">RC</span>
+            <span className="hidden md:inline">Race control</span>
             {!rcOpen && rcUnread > 0 ? (
               <span className="absolute -right-2 -top-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-f1-accent px-1 text-[10px] font-bold text-white">
                 {rcUnread > 99 ? "99+" : rcUnread}
@@ -133,12 +135,15 @@ export function Header(props: {
           >
             ● {trackState.label}
           </span>
-          <span className="rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300">
+          <span className="hidden rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300 md:inline">
             {timeState}
           </span>
-          <span className="flex items-center gap-1.5 rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300">
+          <span
+            className="flex items-center gap-1.5 rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300"
+            title={statusLabel}
+          >
             <span className={`h-2 w-2 rounded-full ${statusDot}`} />
-            {statusLabel}
+            <span className="hidden md:inline">{statusLabel}</span>
           </span>
         </div>
       </div>
@@ -151,7 +156,7 @@ function ViewTab(props: { label: string; active: boolean; onClick: () => void })
   return (
     <button
       onClick={onClick}
-      className={`px-2.5 py-1 font-mono text-xs font-bold uppercase tracking-wider transition-colors ${
+      className={`whitespace-nowrap px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-wider transition-colors md:px-2.5 md:text-xs ${
         active
           ? "bg-f1-accent/20 text-white"
           : "bg-zinc-800/60 text-zinc-300 hover:bg-zinc-700/60"

@@ -11,6 +11,12 @@ import type { LtsServerMessage } from "./types";
 import { initialState, reducer } from "./lib/state";
 
 const DEFAULT_EVENT_ID = "50";
+const FORCE_DESKTOP_KEY = "fastn24:forceDesktop";
+
+function readForceDesktop(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(FORCE_DESKTOP_KEY) === "1";
+}
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -18,6 +24,18 @@ export function App() {
   const [status, setStatus] = useState<ConnectionStatus>({ kind: "idle" });
   const [filters, setFilters] = useState<FilterState>(emptyFilters);
   const [view, setView] = useState<"timing" | "lapchart" | "track">("timing");
+  const [forceDesktop, setForceDesktop] = useState<boolean>(readForceDesktop);
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    meta.setAttribute(
+      "content",
+      forceDesktop
+        ? "width=1280, initial-scale=1"
+        : "width=device-width, initial-scale=1.0",
+    );
+    window.localStorage.setItem(FORCE_DESKTOP_KEY, forceDesktop ? "1" : "0");
+  }, [forceDesktop]);
   const [rcOpen, setRcOpen] = useState<boolean>(() =>
     typeof window === "undefined" ? false : window.innerWidth >= 1280,
   );
@@ -86,6 +104,26 @@ export function App() {
           onChange={setFilters}
         />
 
+        {!forceDesktop ? (
+          <div className="flex justify-end border-b border-f1-divider bg-f1-bg px-3 py-1 md:hidden">
+            <button
+              type="button"
+              onClick={() => setForceDesktop(true)}
+              className="text-[11px] uppercase tracking-wider text-f1-dim underline-offset-2 hover:text-white hover:underline"
+            >
+              Desktop view →
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setForceDesktop(false)}
+            className="fixed left-2 top-2 z-50 rounded-sm border border-f1-accent bg-black/80 px-2 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg backdrop-blur"
+          >
+            ← Mobile view
+          </button>
+        )}
+
         <div className="flex flex-1 overflow-hidden">
           <div className="flex flex-1 flex-col overflow-hidden">
             {!snapshot ? (
@@ -120,7 +158,7 @@ export function App() {
           ) : null}
         </div>
 
-        <footer className="flex items-center justify-between border-t border-f1-divider bg-f1-panel px-6 py-2 text-[11px] text-f1-dim">
+        <footer className="hidden items-center justify-between border-t border-f1-divider bg-f1-panel px-6 py-2 text-[11px] text-f1-dim md:flex">
           <span>
             Event ID <span className="font-mono text-zinc-300">{eventId}</span>
             {" · "}

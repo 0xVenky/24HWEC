@@ -22,6 +22,7 @@ export function FilterBar(props: {
   onChange: (f: FilterState) => void;
 }) {
   const [classMenuOpen, setClassMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const { entries, filters, onChange } = props;
 
   const allClasses = useMemo(() => {
@@ -50,101 +51,117 @@ export function FilterBar(props: {
     onChange({ classes: new Set(), groups: new Set(), search: "", onlyRunning: filters.onlyRunning });
 
   const activeCount = filters.classes.size + filters.groups.size + (filters.search ? 1 : 0);
+  const anyActive = activeCount > 0;
+  const showMobile = mobileOpen || anyActive;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-f1-divider bg-f1-bg px-6 py-3">
+    <div className="flex flex-wrap items-center gap-2 border-b border-f1-divider bg-f1-bg px-3 py-2 md:px-6 md:py-3">
       <input
         type="text"
         value={filters.search}
         onChange={(e) => onChange({ ...filters, search: e.target.value })}
+        onFocus={() => setMobileOpen(true)}
         placeholder="Search driver / car / team / #"
-        className="w-64 rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white placeholder:text-f1-dim focus:border-f1-accent focus:outline-none"
+        className="w-full rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-white placeholder:text-f1-dim focus:border-f1-accent focus:outline-none md:w-64"
       />
 
-      <div className="mx-1 h-6 w-px bg-f1-divider" />
+      <div
+        className={`${showMobile ? "flex" : "hidden"} w-full flex-wrap items-center gap-2 md:contents md:w-auto`}
+      >
+        <div className="mx-1 hidden h-6 w-px bg-f1-divider md:block" />
 
-      <span className="text-xs uppercase tracking-wider text-f1-dim">Group:</span>
-      {CLASS_GROUPS.map((g) => {
-        const active = filters.groups.has(g.label);
-        return (
+        <span className="hidden text-xs uppercase tracking-wider text-f1-dim md:inline">Group:</span>
+        {CLASS_GROUPS.map((g) => {
+          const active = filters.groups.has(g.label);
+          return (
+            <button
+              key={g.label}
+              onClick={() => toggleGroup(g.label)}
+              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                active
+                  ? "border-f1-accent bg-f1-accent/20 text-white"
+                  : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500"
+              }`}
+            >
+              {g.label}
+            </button>
+          );
+        })}
+
+        <div className="mx-1 hidden h-6 w-px bg-f1-divider md:block" />
+
+        <div className="relative">
           <button
-            key={g.label}
-            onClick={() => toggleGroup(g.label)}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-              active
-                ? "border-f1-accent bg-f1-accent/20 text-white"
-                : "border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500"
-            }`}
+            onClick={() => setClassMenuOpen((v) => !v)}
+            className="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-zinc-200 hover:border-zinc-500"
           >
-            {g.label}
+            Class
+            {filters.classes.size > 0 ? (
+              <span className="ml-2 rounded-sm bg-f1-accent px-1.5 py-0.5 text-[10px] text-white">
+                {filters.classes.size}
+              </span>
+            ) : null}
           </button>
-        );
-      })}
+          {classMenuOpen && (
+            <div className="absolute z-10 mt-1 max-h-96 w-72 overflow-auto rounded-sm border border-zinc-700 bg-f1-panel p-2 shadow-xl">
+              {allClasses.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-f1-dim">No data yet</div>
+              ) : (
+                allClasses.map(([name, n]) => {
+                  const active = filters.classes.has(name);
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => toggleClass(name)}
+                      className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-zinc-800 ${
+                        active ? "bg-zinc-800 text-white" : "text-zinc-300"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span
+                          className="inline-block h-3 w-1 flex-none rounded-sm"
+                          style={{ backgroundColor: classColor(name) }}
+                        />
+                        <span className="truncate">{name}</span>
+                      </span>
+                      <span className="text-f1-dim">{n}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
 
-      <div className="mx-1 h-6 w-px bg-f1-divider" />
+        <label className="ml-1 hidden items-center gap-2 text-xs text-zinc-300 md:flex">
+          <input
+            type="checkbox"
+            checked={filters.onlyRunning}
+            onChange={(e) => onChange({ ...filters, onlyRunning: e.target.checked })}
+            className="accent-f1-accent"
+          />
+          Hide stationary (LAPS = 0)
+        </label>
 
-      <div className="relative">
-        <button
-          onClick={() => setClassMenuOpen((v) => !v)}
-          className="rounded-sm border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-zinc-200 hover:border-zinc-500"
-        >
-          Class
-          {filters.classes.size > 0 ? (
-            <span className="ml-2 rounded-sm bg-f1-accent px-1.5 py-0.5 text-[10px] text-white">
-              {filters.classes.size}
-            </span>
-          ) : null}
-        </button>
-        {classMenuOpen && (
-          <div className="absolute z-10 mt-1 max-h-96 w-72 overflow-auto rounded-sm border border-zinc-700 bg-f1-panel p-2 shadow-xl">
-            {allClasses.length === 0 ? (
-              <div className="px-2 py-1.5 text-xs text-f1-dim">No data yet</div>
-            ) : (
-              allClasses.map(([name, n]) => {
-                const active = filters.classes.has(name);
-                return (
-                  <button
-                    key={name}
-                    onClick={() => toggleClass(name)}
-                    className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-zinc-800 ${
-                      active ? "bg-zinc-800 text-white" : "text-zinc-300"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2 truncate">
-                      <span
-                        className="inline-block h-3 w-1 flex-none rounded-sm"
-                        style={{ backgroundColor: classColor(name) }}
-                      />
-                      <span className="truncate">{name}</span>
-                    </span>
-                    <span className="text-f1-dim">{n}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
-      <label className="ml-1 flex items-center gap-2 text-xs text-zinc-300">
-        <input
-          type="checkbox"
-          checked={filters.onlyRunning}
-          onChange={(e) => onChange({ ...filters, onlyRunning: e.target.checked })}
-          className="accent-f1-accent"
-        />
-        Hide stationary (LAPS = 0)
-      </label>
-
-      <div className="ml-auto flex items-center gap-2">
-        {activeCount > 0 && (
-          <button
-            onClick={clearAll}
-            className="text-xs uppercase tracking-wider text-f1-dim underline-offset-2 hover:text-white hover:underline"
-          >
-            Clear filters
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {activeCount > 0 && (
+            <button
+              onClick={clearAll}
+              className="text-xs uppercase tracking-wider text-f1-dim underline-offset-2 hover:text-white hover:underline"
+            >
+              Clear filters
+            </button>
+          )}
+          {!anyActive && (
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="text-xs uppercase tracking-wider text-f1-dim underline-offset-2 hover:text-white hover:underline md:hidden"
+            >
+              Hide
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -94,6 +94,15 @@ function rowBg(idx: number, isLeader: boolean) {
   return idx % 2 === 0 ? "bg-f1-row" : "bg-f1-rowAlt";
 }
 
+type MobileDelta = "gap" | "int";
+const MOBILE_DELTA_KEY = "fastn24:mobileDelta";
+
+function readMobileDelta(): MobileDelta {
+  if (typeof window === "undefined") return "gap";
+  const v = window.localStorage.getItem(MOBILE_DELTA_KEY);
+  return v === "int" ? "int" : "gap";
+}
+
 export function TimingTable(props: {
   snapshot: LtsSnapshot;
   filteredEntries: LtsResultEntry[];
@@ -115,6 +124,15 @@ export function TimingTable(props: {
     [filteredEntries, sectorCount],
   );
   const sorted = useMemo(() => sortedByPosition(filteredEntries), [filteredEntries]);
+
+  const [mobileDelta, setMobileDelta] = useState<MobileDelta>(readMobileDelta);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(MOBILE_DELTA_KEY, mobileDelta);
+  }, [mobileDelta]);
+  const toggleMobileDelta = useCallback(() => {
+    setMobileDelta((v) => (v === "gap" ? "int" : "gap"));
+  }, []);
 
   const [hovered, setHovered] = useState<{
     entry: LtsResultEntry;
@@ -157,25 +175,40 @@ export function TimingTable(props: {
   return (
     <>
       <div className="timing-scroll flex-1 overflow-auto">
-        <table className="min-w-full font-mono text-xs">
+        <table className="w-full table-fixed font-mono text-xs md:min-w-full md:table-auto">
           <thead className="sticky top-0 z-10 bg-f1-panel">
             <tr className="border-b border-f1-divider text-f1-dim">
-              <Th className="w-10 text-right">POS</Th>
-              <Th className="w-8">CLS</Th>
-              <Th className="w-10 text-right">#</Th>
-              <Th className="min-w-[12rem]">TEAM / DRIVER</Th>
-              <Th className="w-12 text-right">LAP</Th>
-              <Th className="w-24 text-right">LAST LAP</Th>
-              <Th className="w-24 text-right">BEST</Th>
-              <Th className="w-20 text-right">GAP</Th>
-              <Th className="w-20 text-right">INT</Th>
+              <Th className="w-8 text-right md:w-10">POS</Th>
+              <Th className="w-3 md:w-8">CLS</Th>
+              <Th className="w-8 text-right md:w-10">#</Th>
+              <Th className="md:min-w-[12rem]">
+                <span className="md:hidden">TEAM</span>
+                <span className="hidden md:inline">TEAM / DRIVER</span>
+              </Th>
+              <Th className="hidden w-12 text-right md:table-cell">LAP</Th>
+              <Th className="hidden w-24 text-right md:table-cell">LAST LAP</Th>
+              <Th className="hidden w-24 text-right md:table-cell">BEST</Th>
+              <Th className="hidden w-20 text-right md:table-cell">GAP</Th>
+              <Th className="hidden w-20 text-right md:table-cell">INT</Th>
+              <th className="w-24 px-1 py-2 text-right text-[10px] font-semibold uppercase tracking-wider md:hidden">
+                <button
+                  type="button"
+                  onClick={toggleMobileDelta}
+                  className="inline-flex w-full items-center justify-end gap-1 text-f1-dim hover:text-white"
+                  aria-label={`Swap to ${mobileDelta === "gap" ? "interval" : "gap"}`}
+                  title="Tap to swap GAP / INT"
+                >
+                  <span>{mobileDelta === "gap" ? "GAP" : "INT"}</span>
+                  <span aria-hidden className="text-[9px] text-f1-dim">⇄</span>
+                </button>
+              </th>
               {Array.from({ length: sectorCount }).map((_, i) => (
-                <Th key={i} className="text-center">
+                <Th key={i} className="hidden text-center md:table-cell">
                   S{i + 1}
                 </Th>
               ))}
-              <Th className="w-12 text-center">Δ</Th>
-              <Th className="w-24">CLASS</Th>
+              <Th className="hidden w-12 text-center md:table-cell">Δ</Th>
+              <Th className="hidden w-24 md:table-cell">CLASS</Th>
             </tr>
           </thead>
           <tbody>
@@ -186,6 +219,7 @@ export function TimingTable(props: {
                 idx={idx}
                 sectorCount={sectorCount}
                 best={best}
+                mobileDelta={mobileDelta}
                 onEnter={onRowEnter}
                 onLeave={onRowLeave}
               />
@@ -212,11 +246,13 @@ function Row(props: {
   idx: number;
   sectorCount: number;
   best: BestTimes;
+  mobileDelta: MobileDelta;
   onEnter: (e: LtsResultEntry, el: HTMLTableRowElement | null) => void;
   onLeave: () => void;
 }) {
-  const { e, idx, sectorCount, best, onEnter, onLeave } = props;
+  const { e, idx, sectorCount, best, mobileDelta, onEnter, onLeave } = props;
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const mobileDeltaValue = mobileDelta === "gap" ? e.GAP : e.INT;
 
   return (
     <tr
@@ -237,15 +273,18 @@ function Row(props: {
       <Td>
         <DriverCell e={e} />
       </Td>
-      <Td className="text-right tabular-nums text-zinc-200">{e.LAPS}</Td>
-      <Td className="text-right tabular-nums text-white">{fmtTime(e.LASTLAPTIME)}</Td>
-      <Td className="text-right tabular-nums text-violet-300">{fmtTime(e.FASTESTLAP)}</Td>
-      <Td className="text-right tabular-nums text-zinc-200">{fmtGap(e.GAP)}</Td>
-      <Td className="text-right tabular-nums text-zinc-300">{fmtGap(e.INT)}</Td>
+      <Td className="hidden text-right tabular-nums text-zinc-200 md:table-cell">{e.LAPS}</Td>
+      <Td className="hidden text-right tabular-nums text-white md:table-cell">{fmtTime(e.LASTLAPTIME)}</Td>
+      <Td className="hidden text-right tabular-nums text-violet-300 md:table-cell">{fmtTime(e.FASTESTLAP)}</Td>
+      <Td className="hidden text-right tabular-nums text-zinc-200 md:table-cell">{fmtGap(e.GAP)}</Td>
+      <Td className="hidden text-right tabular-nums text-zinc-300 md:table-cell">{fmtGap(e.INT)}</Td>
+      <td className="overflow-hidden truncate px-1 py-1.5 text-right tabular-nums text-zinc-200 md:hidden">
+        {fmtGap(mobileDeltaValue)}
+      </td>
       {Array.from({ length: sectorCount }).map((_, i) => {
         const k = `S${i + 1}TIME` as keyof LtsResultEntry;
         return (
-          <Td key={i} className="text-center">
+          <Td key={i} className="hidden text-center md:table-cell">
             <SectorCell
               time={(e[k] as string) ?? ""}
               tone={getSectorTone(e, i, best)}
@@ -254,10 +293,10 @@ function Row(props: {
           </Td>
         );
       })}
-      <Td className="text-center">
+      <Td className="hidden text-center md:table-cell">
         <PositionChange chg={e.CHG} />
       </Td>
-      <Td>
+      <Td className="hidden md:table-cell">
         <span className="text-[10px] font-medium uppercase text-zinc-300">
           {e.CLASSNAME}
           <span className="ml-1 text-f1-dim">P{e.CLASSRANK}</span>
@@ -321,7 +360,7 @@ function stateBadgeClass(tone: "pit" | "approach" | "finish"): string {
 function Th(props: { children: React.ReactNode; className?: string }) {
   return (
     <th
-      className={`px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider ${props.className ?? ""}`}
+      className={`px-1 py-2 text-left text-[10px] font-semibold uppercase tracking-wider md:px-2 ${props.className ?? ""}`}
     >
       {props.children}
     </th>
@@ -329,5 +368,5 @@ function Th(props: { children: React.ReactNode; className?: string }) {
 }
 
 function Td(props: { children: React.ReactNode; className?: string }) {
-  return <td className={`whitespace-nowrap px-2 py-1.5 ${props.className ?? ""}`}>{props.children}</td>;
+  return <td className={`whitespace-nowrap px-1 py-1.5 md:px-2 ${props.className ?? ""}`}>{props.children}</td>;
 }
