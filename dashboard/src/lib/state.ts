@@ -198,6 +198,32 @@ export function tone(messageText: string): "red" | "amber" | "green" | "neutral"
   return "neutral";
 }
 
+// Lap numbers (ascending) on which a car likely pitted. The live feed only
+// gives us a cumulative PITSTOPCOUNT, not a per-stop event log, so we identify
+// pit laps as the N slowest laps by Σ(sectors) where N = pitstopCount. Pit
+// stops add several minutes of stationary time to a lap, which dwarfs the
+// typical Code-60 / slow-zone outlier, so top-N is reliable when N ≥ 1 and
+// the car has done meaningfully more laps than it has pitted.
+export function detectPitLaps(
+  laps: LapWithDriver[],
+  pitstopCount: number,
+): number[] {
+  if (pitstopCount <= 0 || laps.length === 0) return [];
+  const totals: { L: number; ms: number }[] = [];
+  for (const l of laps) {
+    const ms = lapTotalMs(l);
+    if (ms != null) totals.push({ L: l.L, ms });
+  }
+  if (totals.length === 0) return [];
+  const n = Math.min(pitstopCount, totals.length);
+  return totals
+    .slice()
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, n)
+    .map((x) => x.L)
+    .sort((a, b) => a - b);
+}
+
 // Compute total lap time in ms. Prefer the server's authoritative `T` field
 // when present and non-zero (see PROTOCOL.md for T semantics — live-stream
 // form: T = D(L) − D(L−1); backfill form: T = session-elapsed since L=1).
