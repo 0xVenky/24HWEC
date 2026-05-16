@@ -1,0 +1,389 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LtsResultEntry, LtsSnapshot } from "../types";
+import { classColor } from "../lib/classes";
+import { formatDriverName, fmtGap, fmtTime } from "../lib/format";
+import {
+  NURBURGRING_PATH,
+  NURBURGRING_START,
+  NURBURGRING_VIEWBOX,
+} from "../lib/nordschleife";
+import {
+  estimateCarPosition,
+  trackGeometryFromSnapshot,
+  type CarPosState,
+} from "../lib/trackGeometry";
+
+const DOT_RADIUS = 6;
+const PIT_LANE_Y = NURBURGRING_VIEWBOX.height - 30;
+const PIT_LANE_X = 60;
+const PIT_LANE_W = NURBURGRING_VIEWBOX.width - 120;
+
+interface DotHandles {
+  group: SVGGElement;
+  circle: SVGCircleElement;
+  label: SVGTextElement;
+}
+
+export function TrackMap(props: {
+  snapshot: LtsSnapshot;
+  filteredEntries: LtsResultEntry[];
+}) {
+  const { snapshot, filteredEntries } = props;
+  const pathRef = useRef<SVGPathElement | null>(null);
+  const dotsRef = useRef<Map<string, DotHandles>>(new Map());
+  const pathLengthRef = useRef<number>(0);
+  // Snapshot the most recent entries for each car so the RAF loop sees fresh
+  // LASTIMTIME / sector-time values even between React renders.
+  const entryRef = useRef<Map<string, LtsResultEntry>>(new Map());
+
+  const geom = useMemo(() => trackGeometryFromSnapshot(snapshot), [snapshot]);
+
+  // Stable ordered list of cars we expect to render. Order doesn't matter
+  // visually (cars are positioned absolutely on the track) but a stable order
+  // keeps the SVG DOM happy with refs.
+  const carRows = useMemo(() => {
+    return filteredEntries
+      .filter((e) => e.STNR && e.STNR.length > 0)
+      .sort((a, b) => a.STNR.localeCompare(b.STNR));
+  }, [filteredEntries]);
+
+  // Keep the entry ref in sync with the latest snapshot — by start number.
+  useEffect(() => {
+    const next = new Map<string, LtsResultEntry>();
+    for (const e of carRows) next.set(e.STNR, e);
+    entryRef.current = next;
+  }, [carRows]);
+
+  // Capture path length once we have a path element. Re-measure if the path
+  // string ever changes (it doesn't today, but no harm).
+  useEffect(() => {
+    if (!pathRef.current) return;
+    pathLengthRef.current = pathRef.current.getTotalLength();
+  }, []);
+
+  // Sector boundary points along the path, recomputed when sector lengths
+  // change. Used to draw the small tick marks separating sectors.
+  const sectorTicks = useMemo(() => {
+    const path = pathRef.current;
+    const pathLen = pathLengthRef.current;
+    if (!path || !pathLen || geom.total <= 0) return [];
+    const out: { x: number; y: number; idx: number }[] = [];
+    // geom.cumulative[k] for k=1..N-1 are the intermediate marker positions
+    // (k=0 is the start/finish which we draw separately).
+    for (let k = 1; k < geom.cumulative.length - 1; k++) {
+      const frac = geom.cumulative[k] / geom.total;
+      const p = path.getPointAtLength(frac * pathLen);
+      out.push({ x: p.x, y: p.y, idx: k });
+    }
+    return out;
+  }, [geom]);
+
+  // RAF loop: every frame, recompute each car's distance using the current
+  // wall-clock time and update its dot position imperatively. We avoid React
+  // re-renders here because ~150 dots × 60fps would be wasteful.
+  useEffect(() => {
+    let frame = 0;
+    let active = true;
+
+    const tick = () => {
+      if (!active) return;
+      const path = pathRef.current;
+      const pathLen = pathLengthRef.current;
+      if (path && pathLen > 0 && geom.total > 0) {
+        const now = Date.now();
+        let pitCount = 0;
+        const pitTotalSlot = Math.max(1, countPitlike(entryRef.current));
+        for (const [stnr, handles] of dotsRef.current) {
+          const entry = entryRef.current.get(stnr);
+          if (!entry) {
+            handles.group.style.display = "none";
+            continue;
+          }
+          const pos = estimateCarPosition(entry, geom, now);
+          renderDot(pos, handles, {
+            path,
+            pathLen,
+            total: geom.total,
+            pitIndex: pitCount,
+            pitTotal: pitTotalSlot,
+          });
+          if (pos.kind === "in-pit" || pos.kind === "approach-pit") pitCount++;
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      active = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [geom]);
+
+  // Hover state for the info card.
+  const [hoveredStnr, setHoveredStnr] = useState<string | null>(null);
+  const hoveredEntry = hoveredStnr
+    ? carRows.find((e) => e.STNR === hoveredStnr) ?? null
+    : null;
+  const onEnter = useCallback((stnr: string) => setHoveredStnr(stnr), []);
+  const onLeave = useCallback(() => setHoveredStnr(null), []);
+
+  return (
+    <div className="relative flex-1 overflow-hidden bg-zinc-950 p-4">
+      <svg
+        viewBox={`0 0 ${NURBURGRING_VIEWBOX.width} ${NURBURGRING_VIEWBOX.height}`}
+        className="h-full w-full"
+      >
+        {/* Pit lane strip */}
+        <rect
+          x={PIT_LANE_X}
+          y={PIT_LANE_Y - 8}
+          width={PIT_LANE_W}
+          height={16}
+          fill="#1c1917"
+          stroke="#52525b"
+          strokeWidth={0.5}
+          rx={8}
+        />
+        <text
+          x={PIT_LANE_X - 6}
+          y={PIT_LANE_Y + 3}
+          fontSize={9}
+          fontFamily="ui-monospace, monospace"
+          fill="#a1a1aa"
+          textAnchor="end"
+        >
+          PIT
+        </text>
+
+        {/* Track outline */}
+        <path
+          ref={pathRef}
+          d={NURBURGRING_PATH}
+          fill="none"
+          stroke="#3f3f46"
+          strokeWidth={14}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+        <path
+          d={NURBURGRING_PATH}
+          fill="none"
+          stroke="#71717a"
+          strokeWidth={1.5}
+          strokeDasharray="2 6"
+          strokeLinejoin="round"
+        />
+
+        {/* Sector boundary ticks */}
+        {sectorTicks.map((t) => (
+          <g key={`tick-${t.idx}`} transform={`translate(${t.x} ${t.y})`}>
+            <circle r={3} fill="#fafafa" opacity={0.6} />
+            <text
+              y={-8}
+              fontSize={8}
+              fontFamily="ui-monospace, monospace"
+              fill="#a1a1aa"
+              textAnchor="middle"
+            >
+              I{t.idx}
+            </text>
+          </g>
+        ))}
+
+        {/* Start/finish marker */}
+        <g transform={`translate(${NURBURGRING_START.x} ${NURBURGRING_START.y})`}>
+          <rect x={-9} y={-9} width={18} height={18} fill="#fafafa" />
+          <rect x={-9} y={-9} width={6} height={6} fill="#18181b" />
+          <rect x={-3} y={-3} width={6} height={6} fill="#18181b" />
+          <rect x={3} y={-9} width={6} height={6} fill="#18181b" />
+          <rect x={-9} y={3} width={6} height={6} fill="#18181b" />
+          <rect x={3} y={3} width={6} height={6} fill="#18181b" />
+        </g>
+
+        {/* Cars */}
+        <g>
+          {carRows.map((e) => (
+            <CarDot
+              key={e.STNR}
+              entry={e}
+              onRegister={(h) => {
+                if (h) dotsRef.current.set(e.STNR, h);
+                else dotsRef.current.delete(e.STNR);
+              }}
+              onEnter={() => onEnter(e.STNR)}
+              onLeave={onLeave}
+              isHovered={hoveredStnr === e.STNR}
+            />
+          ))}
+        </g>
+      </svg>
+
+      {/* Legend */}
+      <div className="pointer-events-none absolute left-4 top-4 rounded border border-f1-divider/60 bg-zinc-900/80 px-3 py-2 text-[10px] uppercase tracking-wider text-f1-dim">
+        <div className="font-bold text-zinc-200">{snapshot.TRACKNAME}</div>
+        <div>
+          {(geom.total / 1000).toFixed(3)} km · {geom.sectorLengths.length} sectors
+        </div>
+        <div className="mt-1 normal-case text-[9px]">
+          Positions estimated between intermediates · dots glide forward in real time
+        </div>
+      </div>
+
+      {/* Hover card */}
+      {hoveredEntry ? <HoverInfo entry={hoveredEntry} /> : null}
+    </div>
+  );
+}
+
+function CarDot(props: {
+  entry: LtsResultEntry;
+  onRegister: (h: DotHandles | null) => void;
+  onEnter: () => void;
+  onLeave: () => void;
+  isHovered: boolean;
+}) {
+  const { entry, onRegister, onEnter, onLeave, isHovered } = props;
+  const groupRef = useRef<SVGGElement | null>(null);
+  const circleRef = useRef<SVGCircleElement | null>(null);
+  const labelRef = useRef<SVGTextElement | null>(null);
+
+  useEffect(() => {
+    if (groupRef.current && circleRef.current && labelRef.current) {
+      onRegister({
+        group: groupRef.current,
+        circle: circleRef.current,
+        label: labelRef.current,
+      });
+    }
+    return () => onRegister(null);
+    // We only want to register/unregister when the component mounts/unmounts;
+    // onRegister is recreated each render but the identity is harmless here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const color = classColor(entry.CLASSNAME);
+  const r = isHovered ? DOT_RADIUS + 2 : DOT_RADIUS;
+
+  return (
+    <g
+      ref={groupRef}
+      style={{ transition: "transform 350ms linear", cursor: "pointer" }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+    >
+      <circle
+        ref={circleRef}
+        r={r}
+        fill={color}
+        stroke={isHovered ? "#ffffff" : "#0a0a0a"}
+        strokeWidth={isHovered ? 1.5 : 1}
+      />
+      <text
+        ref={labelRef}
+        y={2.5}
+        fontSize={6.5}
+        fontWeight={700}
+        fontFamily="ui-monospace, monospace"
+        fill="#000"
+        textAnchor="middle"
+        style={{ pointerEvents: "none" }}
+      >
+        {entry.STNR}
+      </text>
+    </g>
+  );
+}
+
+function countPitlike(map: Map<string, LtsResultEntry>): number {
+  let n = 0;
+  for (const e of map.values()) {
+    const lin = Number.parseInt(e.LASTINTERMEDIATENUMBER ?? "", 10);
+    if (lin === 20 || lin === 16) n++;
+    else if (lin === 0) {
+      const laps = Number.parseInt(e.LAPS ?? "", 10);
+      if (Number.isFinite(laps) && laps > 0) n++;
+    }
+  }
+  return n;
+}
+
+function renderDot(
+  pos: CarPosState,
+  handles: DotHandles,
+  ctx: {
+    path: SVGPathElement;
+    pathLen: number;
+    total: number;
+    pitIndex: number;
+    pitTotal: number;
+  },
+): void {
+  const { group } = handles;
+  if (pos.kind === "off-track") {
+    group.style.display = "none";
+    return;
+  }
+  group.style.display = "";
+
+  if (pos.kind === "in-pit" || pos.kind === "approach-pit") {
+    const slotW = PIT_LANE_W / Math.max(1, ctx.pitTotal);
+    const x = PIT_LANE_X + slotW * ctx.pitIndex + slotW / 2;
+    const y = PIT_LANE_Y;
+    group.setAttribute("transform", `translate(${x.toFixed(2)} ${y.toFixed(2)})`);
+    group.style.opacity = pos.kind === "in-pit" ? "0.6" : "0.85";
+    return;
+  }
+
+  // running
+  group.style.opacity = "1";
+  const frac = ((pos.distance % ctx.total) + ctx.total) % ctx.total / ctx.total;
+  const p = ctx.path.getPointAtLength(frac * ctx.pathLen);
+  group.setAttribute("transform", `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`);
+}
+
+function HoverInfo({ entry }: { entry: LtsResultEntry }) {
+  return (
+    <div className="pointer-events-none absolute right-4 top-4 min-w-[18rem] rounded border border-f1-divider/80 bg-zinc-900/95 p-3 text-xs shadow-xl">
+      <div className="flex items-baseline justify-between gap-3">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-wider text-f1-dim">
+            #{entry.STNR} · P{entry.POSITION}
+          </div>
+          <div className="text-sm font-semibold text-white">
+            {formatDriverName(entry.NAME)}
+          </div>
+        </div>
+        <span
+          className="rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase"
+          style={{
+            backgroundColor: classColor(entry.CLASSNAME),
+            color: "#0a0a0a",
+          }}
+        >
+          {entry.CLASSNAME}
+        </span>
+      </div>
+      <div className="mt-1 text-[11px] text-zinc-300">{entry.CAR}</div>
+      {entry.TEAM ? (
+        <div className="text-[11px] text-f1-dim">{entry.TEAM}</div>
+      ) : null}
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px]">
+        <Field label="Lap" value={entry.LAPS} />
+        <Field label="Last" value={fmtTime(entry.LASTLAPTIME)} />
+        <Field label="Best" value={fmtTime(entry.FASTESTLAP)} />
+        <Field label="Gap" value={fmtGap(entry.GAP)} />
+        <Field label="Int" value={fmtGap(entry.INT)} />
+        <Field label="Pit#" value={entry.PITSTOPCOUNT} />
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string | undefined }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-f1-dim">{label}</span>
+      <span className="text-zinc-200">{value || "—"}</span>
+    </div>
+  );
+}

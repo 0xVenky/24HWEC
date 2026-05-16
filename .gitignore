@@ -1,0 +1,30 @@
+# Dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local OS / editor noise
+.DS_Store
+*.log
+.vscode/
+.idea/
+
+# Local Claude session data — keep launch.json but ignore the rest.
+.claude/settings.local.json
+.claude/sessions/
+.claude/transcripts/
+
+# Capture artefacts — large/ephemeral; regenerable via capture.ts / snapshot-compare.ts.
+# fixtures/*.jsonl is intentionally tracked as a regression sample (see build-prompt.md).
+/*.jsonl
+/frames.jsonl
+/smoke.jsonl
+
+# Ephemeral comparison outputs
+compare-snapshot.json
+diff-report.txt
+
+# Env / secrets
+.env
+.env.*
+!.env.example

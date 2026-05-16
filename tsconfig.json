@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "types": ["node"]
+  },
+  "include": ["capture.ts", "analyze.ts", "snapshot-compare.ts", "diff-snapshots.ts"],
+  "exclude": ["node_modules", "dashboard", "fixtures", "**/*.mjs"]
+}
