@@ -138,7 +138,11 @@ export function App() {
                 lapsByCar={lapsByCar}
               />
             ) : view === "track" ? (
-              <TrackMap snapshot={snapshot} filteredEntries={filteredEntries} />
+              <TrackMap
+                snapshot={snapshot}
+                filteredEntries={filteredEntries}
+                code60={code60}
+              />
             ) : filteredEntries.length === 0 ? (
               <div className="flex flex-1 items-center justify-center text-sm text-f1-dim">
                 No cars match the current filters.
