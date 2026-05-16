@@ -110,7 +110,9 @@ export function Header(props: {
           <div className="inline-flex overflow-hidden rounded-sm border border-zinc-700">
             <ViewTab label="Timing" active={view === "timing"} onClick={() => onSetView("timing")} />
             <ViewTab label="Track" active={view === "track"} onClick={() => onSetView("track")} />
-            <ViewTab label="Lap chart" active={view === "lapchart"} onClick={() => onSetView("lapchart")} />
+            <span className="hidden md:contents">
+              <ViewTab label="Lap chart" active={view === "lapchart"} onClick={() => onSetView("lapchart")} />
+            </span>
           </div>
           <button
             onClick={onToggleRc}
@@ -131,7 +133,7 @@ export function Header(props: {
             ) : null}
           </button>
           <span
-            className={`rounded-sm border px-2 py-1 font-mono text-xs font-bold uppercase tracking-wider ${
+            className={`hidden rounded-sm border px-2 py-1 font-mono text-xs font-bold uppercase tracking-wider md:inline ${
               toneClass[trackState.tone]
             }`}
           >

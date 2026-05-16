@@ -76,7 +76,7 @@ export function RaceControl(props: {
   }, [messages]);
 
   return (
-    <aside className="flex h-full w-[24rem] flex-none flex-col border-l border-f1-divider bg-f1-panel">
+    <aside className="flex h-full w-full flex-none flex-col border-l border-f1-divider bg-f1-panel md:w-[24rem]">
       <div className="flex items-center justify-between border-b border-f1-divider px-3 py-2">
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-bold uppercase tracking-widest text-white">
