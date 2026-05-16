@@ -1,6 +1,7 @@
 import type { LtsSnapshot, LtsSessionState } from "../types";
-import { trackStateLabel, timeStateLabel } from "../lib/format";
+import { trackStateLabel } from "../lib/format";
 import type { ConnectionStatus } from "../lib/ws-client";
+import type { Code60State } from "../lib/code60";
 
 export type HeaderView = "timing" | "track" | "lapchart";
 
@@ -15,6 +16,7 @@ export function Header(props: {
   onToggleRc: () => void;
   view: HeaderView;
   onSetView: (v: HeaderView) => void;
+  code60: Code60State | null;
 }) {
   const {
     snapshot,
@@ -27,9 +29,9 @@ export function Header(props: {
     onToggleRc,
     view,
     onSetView,
+    code60,
   } = props;
   const trackState = trackStateLabel(session?.TRACKSTATE ?? snapshot?.TRACKSTATE);
-  const timeState = timeStateLabel(session?.TIMESTATE);
 
   const toneClass: Record<string, string> = {
     green: "bg-green-500/20 text-green-300 border-green-500/40",
@@ -135,15 +137,27 @@ export function Header(props: {
           >
             ● {trackState.label}
           </span>
-          <span className="hidden rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300 md:inline">
-            {timeState}
-          </span>
-          <span
-            className="flex items-center gap-1.5 rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300"
-            title={statusLabel}
-          >
+          {code60 ? (
+            <span
+              className={`whitespace-nowrap rounded-sm border px-2 py-1 font-mono text-xs font-bold uppercase tracking-wider ${
+                code60.code60 > 0 || code60.dblYellow > 0
+                  ? "border-amber-500/40 bg-amber-500/20 text-amber-200"
+                  : "border-zinc-700 bg-zinc-800/60 text-zinc-400"
+              } ${code60.stale ? "opacity-60" : ""}`}
+              title={
+                `${code60.code60} Code 60 zone${code60.code60 === 1 ? "" : "s"}` +
+                ` · ${code60.dblYellow} double-yellow (120 km/h) zone${code60.dblYellow === 1 ? "" : "s"}` +
+                (code60.stale ? " · last update stale" : "") +
+                "\nSource: api-racingios.gpsoverip.de/v1/racing/rules/active"
+              }
+            >
+              C60 {code60.code60}
+              <span className="ml-1.5 text-amber-300/70">· 120 {code60.dblYellow}</span>
+            </span>
+          ) : null}
+          <span className="flex items-center gap-1.5 rounded-sm border border-zinc-700 bg-zinc-800/60 px-2 py-1 font-mono text-xs uppercase tracking-wider text-zinc-300">
             <span className={`h-2 w-2 rounded-full ${statusDot}`} />
-            <span className="hidden md:inline">{statusLabel}</span>
+            {statusLabel}
           </span>
         </div>
       </div>

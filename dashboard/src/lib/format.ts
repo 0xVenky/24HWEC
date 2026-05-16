@@ -194,17 +194,3 @@ export function trackStateLabel(trackState: string | undefined): { label: string
   }
 }
 
-export function timeStateLabel(timeState: string | undefined): string {
-  switch (timeState) {
-    case "0":
-      return "WAITING";
-    case "1":
-      return "LIVE";
-    case "2":
-      return "PAUSED";
-    case "3":
-      return "FINISHED";
-    default:
-      return timeState ? `T${timeState}` : "—";
-  }
-}

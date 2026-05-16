@@ -13,6 +13,7 @@ import {
 } from "../lib/format";
 import { SectorCell } from "./SectorCell";
 import { HoverCard, type HoverCardAnchor } from "./HoverCard";
+import { detectPitLaps } from "../lib/state";
 
 interface BestTimes {
   overall: (number | null)[];
@@ -227,16 +228,23 @@ export function TimingTable(props: {
           </tbody>
         </table>
       </div>
-      {hovered ? (
-        <HoverCard
-          entry={hovered.entry}
-          allEntries={allEntries}
-          anchor={hovered.anchor}
-          recentLaps={
-            lapsByCar.get(Number(hovered.entry.STNR))?.slice(-5).reverse() ?? []
-          }
-        />
-      ) : null}
+      {hovered ? (() => {
+        const allLapsForCar = lapsByCar.get(Number(hovered.entry.STNR)) ?? [];
+        const pitCount = Number.parseInt(hovered.entry.PITSTOPCOUNT, 10);
+        return (
+          <HoverCard
+            entry={hovered.entry}
+            allEntries={allEntries}
+            anchor={hovered.anchor}
+            recentLaps={allLapsForCar.slice(-5).reverse()}
+            pitLaps={
+              Number.isFinite(pitCount)
+                ? detectPitLaps(allLapsForCar, pitCount)
+                : []
+            }
+          />
+        );
+      })() : null}
     </>
   );
 }
