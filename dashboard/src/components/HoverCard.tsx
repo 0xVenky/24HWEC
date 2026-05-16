@@ -23,8 +23,9 @@ export function HoverCard(props: {
   allEntries: LtsResultEntry[]; // unfiltered, for cross-references
   anchor: HoverCardAnchor;
   recentLaps: LapWithDriver[]; // newest-first, max 5
+  pitLaps: number[]; // ascending lap numbers — detected from lap-history outliers
 }) {
-  const { entry, allEntries, anchor, recentLaps } = props;
+  const { entry, allEntries, anchor, recentLaps, pitLaps } = props;
   const meta = classMeta(entry.CLASSNAME);
 
   const teammates = useMemo(
@@ -124,6 +125,13 @@ export function HoverCard(props: {
             <span className="text-f1-dim"> · {entry.PITSUM}</span>
           ) : null}
         </KV>
+        {pitLaps.length > 0 ? (
+          <KV label="Pit laps">
+            <span className="text-zinc-300">
+              {pitLaps.map((L) => `L${L}`).join(", ")}
+            </span>
+          </KV>
+        ) : null}
         <KV label="Currently">
           {currentlyLabel(entry)}
         </KV>
