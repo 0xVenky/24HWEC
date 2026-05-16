@@ -37,10 +37,22 @@ const EVENT_TO_OVERIPAPP: Record<string, string> = {
 type ZoneRow = [zonetype: number, ruleid: number];
 type ZonesResponse = { data: ZoneRow[] };
 
+/** A single active zone restriction. Only the speed-cap variants (60 / 120)
+ *  are surfaced; 0 / -1 are cleared/inactive and 80 is rare/unused on the
+ *  Nordschleife at the moment. */
+export interface ActiveZone {
+  ruleId: number;
+  zonetype: 60 | 120;
+}
+
 export interface Code60State {
   code60: number;
   dblYellow: number;
   total: number;
+  /** Per-zone detail for the speed-restricted entries (Code 60 and double-
+   *  yellow). Order matches the upstream `data` array; consumers that need a
+   *  stable order should sort themselves. */
+  active: ActiveZone[];
   lastUpdatedMs: number;
   stale: boolean;
 }
@@ -68,14 +80,21 @@ export function useCode60Zones(eventId: string): Code60State | null {
         if (cancelled) return;
         let c60 = 0;
         let c120 = 0;
-        for (const [t] of j.data) {
-          if (t === 60) c60++;
-          else if (t === 120) c120++;
+        const active: ActiveZone[] = [];
+        for (const [t, ruleId] of j.data) {
+          if (t === 60) {
+            c60++;
+            active.push({ ruleId, zonetype: 60 });
+          } else if (t === 120) {
+            c120++;
+            active.push({ ruleId, zonetype: 120 });
+          }
         }
         setState({
           code60: c60,
           dblYellow: c120,
           total: j.data.length,
+          active,
           lastUpdatedMs: Date.now(),
           stale: false,
         });

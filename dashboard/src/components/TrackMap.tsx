@@ -11,7 +11,14 @@ import {
   estimateCarPosition,
   trackGeometryFromSnapshot,
   type CarPosState,
+  type TrackGeometry,
 } from "../lib/trackGeometry";
+import type { Code60State, ActiveZone } from "../lib/code60";
+import {
+  MARSHAL_LAP_TOTAL_M,
+  getMarshalPost,
+  type MarshalPost,
+} from "../lib/zones";
 
 const DOT_RADIUS = 12;
 const PIT_LANE_Y = NURBURGRING_VIEWBOX.height - 30;
@@ -27,16 +34,29 @@ interface DotHandles {
 export function TrackMap(props: {
   snapshot: LtsSnapshot;
   filteredEntries: LtsResultEntry[];
+  code60: Code60State | null;
 }) {
-  const { snapshot, filteredEntries } = props;
+  const { snapshot, filteredEntries, code60 } = props;
   const pathRef = useRef<SVGPathElement | null>(null);
   const dotsRef = useRef<Map<string, DotHandles>>(new Map());
   const pathLengthRef = useRef<number>(0);
+  // Force a re-render once the path element is mounted so the sector tint
+  // memo (which depends on pathLength) can read it.
+  const [pathLen, setPathLen] = useState(0);
   // Snapshot the most recent entries for each car so the RAF loop sees fresh
   // LASTIMTIME / sector-time values even between React renders.
   const entryRef = useRef<Map<string, LtsResultEntry>>(new Map());
 
   const geom = useMemo(() => trackGeometryFromSnapshot(snapshot), [snapshot]);
+
+  const sectorSummary = useMemo(
+    () => summarizeZonesBySector(code60?.active ?? [], geom),
+    [code60?.active, geom],
+  );
+  const zoneArcs = useMemo(
+    () => (pathLen > 0 ? buildZoneArcs(code60?.active ?? [], geom, pathLen) : []),
+    [code60?.active, geom, pathLen],
+  );
 
   // Stable ordered list of cars we expect to render. Order doesn't matter
   // visually (cars are positioned absolutely on the track) but a stable order
@@ -58,7 +78,9 @@ export function TrackMap(props: {
   // string ever changes (it doesn't today, but no harm).
   useEffect(() => {
     if (!pathRef.current) return;
-    pathLengthRef.current = pathRef.current.getTotalLength();
+    const len = pathRef.current.getTotalLength();
+    pathLengthRef.current = len;
+    setPathLen(len);
   }, []);
 
   // Sector boundary points along the path, recomputed when sector lengths
@@ -168,6 +190,27 @@ export function TrackMap(props: {
           strokeLinejoin="round"
           strokeLinecap="round"
         />
+
+        {/* Active Code 60 / double-yellow zone arcs. Drawn over the outline
+            but under the dashed centerline so they read as a highlight on
+            the road itself. Each arc is a ~300 m band centered on the active
+            marshal post; adjacent posts merge into one longer band. */}
+        {zoneArcs.map((a, i) => (
+          <path
+            key={`arc-${i}`}
+            d={NURBURGRING_PATH}
+            fill="none"
+            stroke={a.kind === "dblYellow" ? "#facc15" : "#f59e0b"}
+            strokeOpacity={0.9}
+            strokeWidth={14}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            strokeDasharray={`0 ${a.startOffset.toFixed(2)} ${a.segLen.toFixed(2)} 99999`}
+          >
+            <title>{a.tooltip}</title>
+          </path>
+        ))}
+
         <path
           d={NURBURGRING_PATH}
           fill="none"
@@ -229,6 +272,25 @@ export function TrackMap(props: {
         <div className="mt-1 normal-case text-[9px]">
           Positions estimated between intermediates · dots glide forward in real time
         </div>
+        {sectorSummary.length > 0 ? (
+          <div className="pointer-events-auto mt-1.5 flex flex-wrap gap-1 normal-case">
+            {sectorSummary.map((s) => (
+              <span
+                key={`leg-${s.sectorIndex}`}
+                title={s.tooltip}
+                className={`rounded-sm px-1.5 py-0.5 text-[9px] font-bold ${
+                  s.code60Count > 0
+                    ? "bg-amber-500/30 text-amber-200"
+                    : "bg-yellow-400/25 text-yellow-200"
+                }`}
+              >
+                S{s.sectorIndex + 1} {s.code60Count > 0 ? `C60 ×${s.code60Count}` : ""}
+                {s.code60Count > 0 && s.dblYellowCount > 0 ? " · " : ""}
+                {s.dblYellowCount > 0 ? `120 ×${s.dblYellowCount}` : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {/* Selected car card */}
@@ -428,6 +490,168 @@ function Field({
       <span className={valueClassName ?? "text-zinc-200"}>{value || "—"}</span>
     </div>
   );
+}
+
+interface SectorSummary {
+  sectorIndex: number;
+  code60Count: number;
+  dblYellowCount: number;
+  /** Hover-tooltip text listing the active marshal-post numbers. */
+  tooltip: string;
+}
+
+interface ZoneArc {
+  /** SVG-path-units offset to the start of this arc along the track path. */
+  startOffset: number;
+  /** SVG-path-units length of this arc segment. */
+  segLen: number;
+  /** Visual classification — picks the stroke colour. */
+  kind: "code60" | "dblYellow" | "mixed";
+  /** Hover-tooltip text listing the marshal posts contained in this arc. */
+  tooltip: string;
+}
+
+/** Per-post half-width of the rendered band. A 150 m halfwidth → 300 m total
+ *  band, comfortably wider than the typical marshal-post spacing on the
+ *  Nordschleife so adjacent flagged posts merge cleanly into one arc. */
+const ARC_HALF_WIDTH_M = 150;
+
+/** Bucket each active zone into one of the LTS sectors, for the legend chip
+ *  summary at the top of the track map. */
+function summarizeZonesBySector(
+  active: ActiveZone[],
+  geom: TrackGeometry,
+): SectorSummary[] {
+  if (!active.length || geom.total <= 0) return [];
+
+  type Bucket = { code60: MarshalPost[]; dblYellow: MarshalPost[] };
+  const buckets = new Map<number, Bucket>();
+
+  for (const zone of active) {
+    const post = getMarshalPost(zone.ruleId);
+    if (!post) continue;
+    const trackDist = (post.cumLapM / MARSHAL_LAP_TOTAL_M) * geom.total;
+    let sectorIndex = geom.cumulative.length - 2;
+    for (let i = 0; i < geom.cumulative.length - 1; i++) {
+      if (trackDist < geom.cumulative[i + 1]) {
+        sectorIndex = i;
+        break;
+      }
+    }
+    let b = buckets.get(sectorIndex);
+    if (!b) {
+      b = { code60: [], dblYellow: [] };
+      buckets.set(sectorIndex, b);
+    }
+    (zone.zonetype === 60 ? b.code60 : b.dblYellow).push(post);
+  }
+
+  const out: SectorSummary[] = [];
+  for (const [sectorIndex, b] of buckets) {
+    const parts: string[] = [];
+    if (b.code60.length) {
+      parts.push(`C60 at post ${b.code60.map((p) => p.name).join(", ")}`);
+    }
+    if (b.dblYellow.length) {
+      parts.push(`Double-yellow at post ${b.dblYellow.map((p) => p.name).join(", ")}`);
+    }
+    out.push({
+      sectorIndex,
+      code60Count: b.code60.length,
+      dblYellowCount: b.dblYellow.length,
+      tooltip: `Sector ${sectorIndex + 1} — ${parts.join(" · ")}`,
+    });
+  }
+  out.sort((a, b) => a.sectorIndex - b.sectorIndex);
+  return out;
+}
+
+/** Build the per-post SVG arcs. Each active zone produces a band of
+ *  ±ARC_HALF_WIDTH_M centred on its marshal post; overlapping bands (i.e.
+ *  adjacent flagged posts) merge into one. Bands that wrap past start/finish
+ *  are split so we get two arcs on either side of the line. */
+function buildZoneArcs(
+  active: ActiveZone[],
+  geom: TrackGeometry,
+  pathLen: number,
+): ZoneArc[] {
+  if (!active.length || geom.total <= 0 || pathLen <= 0) return [];
+
+  const scale = geom.total / MARSHAL_LAP_TOTAL_M;
+  const total = geom.total;
+
+  interface Band {
+    start: number;
+    end: number;
+    types: Set<60 | 120>;
+    posts: string[];
+  }
+  const raw: Band[] = [];
+  for (const zone of active) {
+    const post = getMarshalPost(zone.ruleId);
+    if (!post) continue;
+    const center = post.cumLapM * scale;
+    raw.push({
+      start: center - ARC_HALF_WIDTH_M,
+      end: center + ARC_HALF_WIDTH_M,
+      types: new Set([zone.zonetype]),
+      posts: [post.name],
+    });
+  }
+  if (!raw.length) return [];
+
+  raw.sort((a, b) => a.start - b.start);
+  const merged: Band[] = [];
+  for (const b of raw) {
+    const last = merged[merged.length - 1];
+    if (last && b.start <= last.end) {
+      last.end = Math.max(last.end, b.end);
+      last.posts.push(...b.posts);
+      for (const t of b.types) last.types.add(t);
+    } else {
+      merged.push({ start: b.start, end: b.end, types: new Set(b.types), posts: [...b.posts] });
+    }
+  }
+
+  const arcs: ZoneArc[] = [];
+  for (const b of merged) {
+    const hasC60 = b.types.has(60);
+    const hasDY = b.types.has(120);
+    const kind: ZoneArc["kind"] = hasC60 && hasDY ? "mixed" : hasC60 ? "code60" : "dblYellow";
+    const labelParts: string[] = [];
+    if (hasC60) labelParts.push("Code 60");
+    if (hasDY) labelParts.push("Double-yellow");
+    const tooltip = `${labelParts.join(" + ")} — post ${b.posts.join(", ")}`;
+
+    // Shift negative starts forward by one lap so the band sits in [0, 2·total).
+    let s = b.start;
+    let e = b.end;
+    while (s < 0) { s += total; e += total; }
+    if (e <= total) {
+      arcs.push(makeArc(s, e, kind, tooltip, pathLen, total));
+    } else {
+      // Split the wrap across start/finish.
+      arcs.push(makeArc(s, total, kind, tooltip, pathLen, total));
+      arcs.push(makeArc(0, e - total, kind, tooltip, pathLen, total));
+    }
+  }
+  return arcs;
+}
+
+function makeArc(
+  startM: number,
+  endM: number,
+  kind: ZoneArc["kind"],
+  tooltip: string,
+  pathLen: number,
+  total: number,
+): ZoneArc {
+  return {
+    startOffset: (startM / total) * pathLen,
+    segLen: Math.max(0, ((endM - startM) / total) * pathLen),
+    kind,
+    tooltip,
+  };
 }
 
 function signedGap(raw: string | undefined, sign: "+" | "-"): string {
